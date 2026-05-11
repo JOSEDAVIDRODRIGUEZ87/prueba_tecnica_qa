@@ -1,32 +1,41 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, Logger } from '@nestjs/common';
 import { Pool } from 'pg';
 import { PG_POOL } from '../common/db.module';
 import { Empresa, ResumenFinanciero } from './empresas.types';
 
 @Injectable()
 export class EmpresasService {
-  constructor(@Inject(PG_POOL) private pool: Pool) {}
+  private readonly logger = new Logger(EmpresasService.name);
 
-  // BUG-04: Filtra empresas activas EN MEMORIA despues de traer TODAS las filas
-  // Con 10.000 empresas esto carga toda la tabla. Debe filtrarse en la query SQL.
+  constructor(@Inject(PG_POOL) private pool: Pool) { }
+
+  /**
+   * Retrieves active companies.
+   * REP-04 Fix: Filtering is now performed at the Database level for scalability.
+   */
   async findAll(): Promise<Empresa[]> {
+    // REP-04 Fix: Added WHERE clause to prevent loading inactive records into memory.
+    // This reduces memory heap usage and network traffic significantly.
     const result = await this.pool.query<Empresa>(
       `SELECT id, nombre, nif, programa, activa, ultima_sync
        FROM empresas
+       WHERE activa = true
        ORDER BY nombre`
-      // BUG-04: falta WHERE activa = true en la query
     );
 
-    // El filtro se hace en memoria — ineficiente y no escala
-    return result.rows.filter(e => e.activa === true);
+    return result.rows;
   }
 
+  /**
+   * Calculates financial summary using secure parameterized queries.
+   * REP-05 Fix: Implemented parameterized queries to prevent SQL Injection.
+   */
   async getResumen(
     empresaId: string,
     ejercicio: number,
     mes: number,
   ): Promise<ResumenFinanciero> {
-    // Verificar que la empresa existe
+    // 1. Verify existence using parameters
     const empresaResult = await this.pool.query(
       'SELECT id FROM empresas WHERE id = $1',
       [empresaId],
@@ -36,21 +45,20 @@ export class EmpresasService {
       throw new NotFoundException(`Empresa ${empresaId} no encontrada`);
     }
 
-    // BUG-05: La query usa interpolacion directa de variables en el SQL
-    // Esto es vulnerable a SQL Injection. Debe usar parametros ($1, $2, $3)
+    // REP-05 Fix: Avoided string interpolation. Used placeholders ($1, $2, $3)
+    // for safe data binding handled by the pg driver.
     const query = `
-      SELECT
-        tipo,
+      SELECT 
+        tipo, 
         SUM(importe) as total
       FROM apuntes
-      WHERE empresa_id = '${empresaId}'
-        AND ejercicio = ${ejercicio}
-        AND mes = ${mes}
+      WHERE empresa_id = $1
+        AND ejercicio = $2
+        AND mes = $3
       GROUP BY tipo
     `;
-    // BUG-05: usar parametros: WHERE empresa_id = $1 AND ejercicio = $2 AND mes = $3
 
-    const result = await this.pool.query(query);
+    const result = await this.pool.query(query, [empresaId, ejercicio, mes]);
 
     let total_ingresos = 0;
     let total_gastos = 0;
