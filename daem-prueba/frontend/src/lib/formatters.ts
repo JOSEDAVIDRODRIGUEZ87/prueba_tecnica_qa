@@ -1,11 +1,12 @@
-// ============================================================
-// formatters.ts
-// Utilidades de formato para la interfaz
-// Ultima modificacion: 2024-10-03
-// ============================================================
+/**
+ * Utility functions for interface formatting.
+ * Refactored to fix indexing bugs and remove dead code.
+ */
 
-// Formatea un importe numerico a string con separador de miles
-// Ejemplos: 12500 -> "12.500,00 €" | -3200 -> "-3.200,00 €"
+/**
+ * Formats a numeric amount to a currency string (EUR).
+ * Example: 12500 -> "12.500,00 €"
+ */
 export function formatImporte(importe: number): string {
   return new Intl.NumberFormat('es-ES', {
     style: 'currency',
@@ -13,39 +14,43 @@ export function formatImporte(importe: number): string {
   }).format(importe);
 }
 
-// Formatea una fecha ISO a formato legible en es-ES
-// Ejemplo: "2024-03-15T10:30:00Z" -> "15 de marzo de 2024"
+/**
+ * Formats an ISO date string to a readable Spanish format.
+ * Example: "2024-03-15T10:30:00Z" -> "15 de marzo de 2024"
+ */
 export function formatFecha(isoString: string): string {
-  return new Intl.DateTimeFormat('es-ES', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date(isoString));
+  if (!isoString) return 'Fecha no disponible';
+  const date = new Date(isoString);
+  return isNaN(date.getTime())
+    ? 'Fecha inválida'
+    : new Intl.DateTimeFormat('es-ES', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(date);
 }
 
-// Devuelve el nombre del mes en espanol
-// BUG-BASURA: el array esta indexado desde 0 pero la funcion recibe mes 1-12
-// Si mes=1 (enero), devuelve "febrero". Offset de 1 en todos los meses.
-// No es un bug reportado — es ruido. El candidato puede o no detectarlo.
+/**
+ * Returns the name of the month in Spanish.
+ * Fix: Corrected offset index (1-12 input to 0-11 array access).
+ */
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
+
 export function nombreMes(mes: number): string {
-  return MESES[mes] ?? 'Mes desconocido'; // BUG-BASURA: deberia ser MESES[mes - 1]
+  // Fix: mes is 1-indexed, array is 0-indexed.
+  return MESES[mes - 1] ?? 'Mes desconocido';
 }
 
-// Trunca un texto a un maximo de caracteres
-// No se usa en ningun componente actual — quedó de una version anterior
-// Candidato a eliminar
-export function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength - 3)}...`;
-}
-
-// Calcula el porcentaje de variacion entre dos valores
-// NOTA: si base es 0, devuelve null en lugar de Infinity
+/**
+ * Calculates percentage variation between two values.
+ * Returns null if base is 0 to avoid division by zero errors.
+ */
 export function variacionPct(actual: number, base: number): number | null {
   if (base === 0) return null;
   return ((actual - base) / Math.abs(base)) * 100;
 }
+
+// CLEAN CODE: Removed unused 'truncate' function to reduce technical debt.
