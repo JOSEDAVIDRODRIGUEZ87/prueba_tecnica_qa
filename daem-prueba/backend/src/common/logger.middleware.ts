@@ -1,14 +1,14 @@
-// ============================================================
-// logger.middleware.ts
-// Middleware de logging de requests HTTP
-// ESTADO: desactivado — ver comentario abajo
-// ============================================================
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 
 @Injectable()
 export class LoggerMiddleware implements NestMiddleware {
   private logger = new Logger('HTTP');
+
+  /**
+   * List of sensitive fields that should be masked in logs.
+   */
+  private readonly SENSITIVE_FIELDS = ['password', 'token', 'access_token', 'secret', 'credit_card'];
 
   use(req: Request, res: Response, next: NextFunction): void {
     const { method, originalUrl, ip } = req;
@@ -18,21 +18,32 @@ export class LoggerMiddleware implements NestMiddleware {
     res.on('finish', () => {
       const { statusCode } = res;
       const duration = Date.now() - start;
+      
+      // Sanitizamos el body para cumplir con auditoría sin comprometer seguridad
+      const sanitizedBody = this.sanitize(req.body);
 
-      // NOTA: se loggea el body completo por requisito del equipo de auditoria
-      // PROBLEMA: si el body contiene passwords o tokens, se loggean tambien
-      // Este middleware fue desactivado del AppModule en DAEM-156 por este motivo
-      // Pendiente de refactorizar para filtrar campos sensibles antes de loggear
       this.logger.log(
-        `${method} ${originalUrl} ${statusCode} ${duration}ms — ${ip} — ${userAgent}`,
-        // TODO: anadir req.body aqui cuando se resuelva el problema de datos sensibles
+        `${method} ${originalUrl} ${statusCode} ${duration}ms — ${ip} — ${userAgent} | Body: ${JSON.stringify(sanitizedBody)}`
       );
     });
 
     next();
   }
-}
 
-// Este middleware NO esta registrado en AppModule
-// Para activarlo: app.use(new LoggerMiddleware().use) en main.ts
-// NO activar sin antes filtrar campos sensibles del body
+  /**
+   * Recursively masks sensitive fields in an object.
+   */
+  private sanitize(data: any): any {
+    if (!data || typeof data !== 'object') return data;
+
+    const cleanData = { ...data };
+    for (const key in cleanData) {
+      if (this.SENSITIVE_FIELDS.includes(key.toLowerCase())) {
+        cleanData[key] = '********'; // Mask sensitive data
+      } else if (typeof cleanData[key] === 'object') {
+        cleanData[key] = this.sanitize(cleanData[key]);
+      }
+    }
+    return cleanData;
+  }
+}
