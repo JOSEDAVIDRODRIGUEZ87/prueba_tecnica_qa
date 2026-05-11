@@ -2,15 +2,16 @@ import { useEffect, useState } from 'react';
 import type { Empresa, FreshnessStatus } from '../types';
 import { fetchEmpresas } from '../services/api';
 
-// Calcula el estado de frescura basado en ultima_sync
-// BUG-10: El calculo es incorrecto — usa minutos pero la comparacion esta invertida.
-// ok deberia ser < 5 min, warning entre 5 y 30, stale > 30.
-// Actualmente ok es > 30 min (invertido).
+/**
+ * Calculates freshness status based on last sync time.
+ * REP-10 Fix: Corrected logic gates and thresholds.
+ */
 function getFreshness(ultima_sync: string): FreshnessStatus {
   const diff = (Date.now() - new Date(ultima_sync).getTime()) / 1000 / 60;
-  if (diff > 30) return 'ok';       // BUG-10: deberia ser 'stale'
-  if (diff > 5) return 'warning';
-  return 'stale';                   // BUG-10: deberia ser 'ok'
+  
+  if (diff < 5) return 'ok';        // < 5 min: Green
+  if (diff <= 30) return 'warning'; // 5 - 30 min: Amber
+  return 'stale';                   // > 30 min: Red
 }
 
 const freshnessColor: Record<FreshnessStatus, string> = {
@@ -32,17 +33,35 @@ interface EmpresaSelectorProps {
 export function EmpresaSelector({ onSelect }: EmpresaSelectorProps) {
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [loading, setLoading] = useState(true);
-  // BUG-11: El estado de error existe pero nunca se usa para mostrar nada al usuario
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchEmpresas()
-      .then(setEmpresas)
+      .then(data => {
+        setEmpresas(data);
+        setError(null);
+      })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Error desconocido');
+        const msg = err instanceof Error ? err.message : 'Error al cargar las empresas';
+        setError(msg);
       })
       .finally(() => setLoading(false));
   }, []);
+
+  // REP-11 Fix: UI for error states
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+        <p className="text-sm font-medium text-red-800">Error: {error}</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="mt-3 text-xs font-semibold text-red-600 underline hover:text-red-800"
+        >
+          Reintentar cargar datos
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -54,9 +73,10 @@ export function EmpresaSelector({ onSelect }: EmpresaSelectorProps) {
     );
   }
 
-  // BUG-11: El error se guarda en estado pero nunca se renderiza.
-  // El usuario ve la pantalla vacia sin saber que ocurrio un error.
-  // Deberia mostrar un mensaje de error si error !== null.
+  // Handle empty state
+  if (empresas.length === 0) {
+    return <p className="text-center text-gray-500">No hay empresas disponibles.</p>;
+  }
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -66,11 +86,11 @@ export function EmpresaSelector({ onSelect }: EmpresaSelectorProps) {
           <button
             key={empresa.id}
             onClick={() => onSelect(empresa)}
-            className="rounded-lg border p-4 text-left shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="group rounded-lg border p-4 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <div className="flex items-start justify-between">
               <div>
-                <p className="font-semibold text-gray-900">{empresa.nombre}</p>
+                <p className="font-semibold text-gray-900 group-hover:text-blue-700">{empresa.nombre}</p>
                 <p className="text-sm text-gray-500">{empresa.nif}</p>
                 <span className="mt-1 inline-block rounded px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-100">
                   {empresa.programa}
