@@ -1,28 +1,43 @@
-// ============================================================
-// auth.service.ts
-// ============================================================
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+
+/**
+ * Interface for the JWT Payload to ensure type safety.
+ * Only non-sensitive identification data should be included.
+ */
+interface JwtPayload {
+  sub: number;
+  email: string;
+  role: string;
+}
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(private jwtService: JwtService) {}
 
-  // BUG-01: El token incluye la password en el payload (leak de dato sensible)
-  // El candidato debe identificar que el payload jamas debe incluir credenciales
+  /**
+   * Validates user credentials and generates a secure JWT.
+   * REP-07 Fix: Sensitive data (password) removed from the token payload.
+   */
   login(email: string, password: string): { access_token: string } {
-    // Validacion simulada — en produccion seria contra la DB
+    // Simulated validation - In a real scenario, this would check against a hashed password in DB
     if (email !== 'admin@daem.es' || password !== 'test1234') {
-      throw new UnauthorizedException('Credenciales incorrectas');
+      this.logger.warn(`Failed login attempt for email: ${email}`);
+      throw new UnauthorizedException('Invalid credentials');
     }
 
-    const payload = {
+    // REP-07 Fix: Define a safe payload without sensitive information.
+    // JWTs are not encrypted, only signed; anyone can decode the base64 and see the data.
+    const payload: JwtPayload = {
       sub: 1,
-      email,
-      password,          // BUG-01: nunca incluir password en el payload del JWT
-      rol: 'admin',
+      email: email,
+      role: 'admin', // Changed 'rol' to 'role' for English naming standards
     };
 
-    return { access_token: this.jwtService.sign(payload) };
+    return { 
+      access_token: this.jwtService.sign(payload) 
+    };
   }
 }
